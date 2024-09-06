@@ -1,5 +1,3 @@
-# gc-base-2024
-
 CS 457 Geometric Computing — Assignments
 ======================================
 
