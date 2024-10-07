@@ -22,8 +22,6 @@ def compute_approximate_hessian_matrix(sk, yk, B_prev):
             The grad(f(x_{k})) is the gradient of our objective energy,
             which is a np.array(#V, 2)
             To be used for BFGS, we flatten the gradient.
-            The flatten process asks the all x coordinates to be first
-            then all y coordinates to be the second.
 
         - B_prev: np.array(#V * 2, #V * 2)
             The approximated hessian matrix from last iteration
@@ -53,8 +51,6 @@ def compute_inverse_approximate_hessian_matrix(sk, yk, invB_prev):
             The grad(f(x_{k})) is the gradient of our objective energy,
             which is a np.array(#V, 2)
             To be used for BFGS, we flatten the gradient.
-            The flatten process asks the all x coordinates to be first
-            then all y coordinates to be the second.
             
         - invB_prev: np.array(#V * 2, #V * 2)
             The inversed matrix of the approximated hessian from last iteration

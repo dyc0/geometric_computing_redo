@@ -16,13 +16,9 @@ def evaluate_armijo_rule(f_x, f_x1, p, grad, c, alpha):
         - p: np.array(2 * #V)
             The flatten search direction
             Here, we use the flatten search direction.
-            The flatten process asks the all x coordinates to be first
-            then all y coordinates to be the second.
         - grad: np.array(2 * #V)
             The gradient of the function at x
-            Here, we use the flatten gradient
-            The flatten process asks the all x coordinates to be first
-            then all y coordinates to be the second.
+            Here, we use the flatten gradient.
         - c: float
             The coefficient for armijo condition
         - alpha: float
@@ -43,13 +39,9 @@ def backtracking_line_search(p, grad, x, theta, beta, c, f, *arg):
         - p: np.array(2 * #V)
             The flatten search direction
             Here, we use the flatten search direction.
-            The flatten process asks the all x coordinates to be first
-            then all y cooridnates to be the second.
         - grad: np.array(2 * #V)
             The gradient of the function at x
-            Here, we use the flatten gradient
-            The flatten process asks the all x coordinates to be first
-            then all y cooridnates to be the second.
+            Here, we use the flatten gradient.
         - x : np.array(#V * 2)
             The array of optimization variables
             x = V[:, 0 : 2].flatten()
