@@ -69,19 +69,42 @@ class TestLinearElasticEnergy:
 
     @pytest.mark.timeout(1)
     def test_pin_mask(self):
-        nv = 32
-        v = torch.zeros((nv, 3))
-        tet = torch.tensor([])
-        pin_idx = [0, 1, 2, 7, 8, 10, 23]
-
-        free_indices = torch.tensor([i for i in range(32) if i not in pin_idx])
-        free_mask = torch.ones((nv, 1))
-        free_mask[pin_idx] = 0
-
+        v = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0]
+        ])
+        tet = torch.tensor([
+            [0, 1, 2, 3],
+            [0, 1, 2, 4]
+            ])
+        pin_idx = [0, 1]
+        
+        free_indices = torch.tensor([2, 3, 4])
+        free_mask = torch.ones((0, 0, 1, 1, 1))
+        
         # test pins existing
         fem_obj = fs.FEMSystem(v, tet, pin_idx=pin_idx)
-        assert fem_obj.free_idx.shape == torch.Size([nv - len(pin_idx)])
-        assert fem_obj.free_mask.shape == torch.Size([nv, 1])
+        assert fem_obj.free_idx.shape == torch.Size([3])
+        assert fem_obj.free_mask.shape == torch.Size([5, 1])
         assert torch.allclose(fem_obj.free_mask, free_mask, atol=1e-10)
         assert torch.allclose(fem_obj.free_idx, free_indices, atol=1e-10)
 
+        # test no pins
+        pin_idx = []
+        fem_obj = fs.FEMSystem(v, tet, pin_idx=pin_idx)
+        assert fem_obj.free_idx.shape == torch.Size([5])
+        assert fem_obj.free_mask.shape == torch.Size([5, 1])
+        assert torch.allclose(fem_obj.free_mask, torch.ones((5,1)), atol=1e-10)
+        assert torch.allclose(fem_obj.free_idx, torch.range(0, 4, dtype=torch.long), atol=1e-10)
+
+        # test wrong dtype
+        pin_idx = [0.0, 1.0]
+        fem_obj = fs.FEMSystem(v, tet, pin_idx=pin_idx)
+        assert fem_obj.free_idx.shape == torch.Size([3])
+        assert fem_obj.free_mask.shape == torch.Size([5, 1])
+        assert torch.allclose(fem_obj.free_mask, free_mask, atol=1e-10)
+        assert torch.allclose(fem_obj.free_idx, free_indices, atol=1e-10)
+        
