@@ -53,7 +53,15 @@ class FEMSystem():
             free_index: torch tensor of shape (#free_vertices,) containing the list of unpinned vertices
             free_mask: torch tensor of shape (#v, 1) containing 1 at free vertex indices and 0 at pinned vertex indices
         '''
-        pass
+        # They are evil and this is pathological
+        self.pin_idx = self.pin_idx.long()
+
+        self.free_mask = torch.ones(self.v_rest.shape[0])
+        if not self.pin_idx.numel() == 0:
+            self.free_mask[self.pin_idx] = 0
+
+        self.free_idx = torch.nonzero(self.free_mask).squeeze()
+        self.free_mask = torch.unsqueeze(self.free_mask, -1)
         
     def update_rest_shape(self, v_rest):
         '''
@@ -67,8 +75,13 @@ class FEMSystem():
             Bm: inverse of the shape matrices of the undeformed configuration (#t, 3, 3)
             W0: signed volumes of the tetrahedra (#t,)
         '''
-        pass
-        
+        self.v_rest = v_rest.clone()
+        self.rest_barycenters = compute_barycenters(self.v_rest, self.tet)
+        self.Dm = compute_shape_matrices(self.v_rest, self.tet)
+        # Compute batch inverse, is alias for torch.linalg.inv
+        self.Bm = torch.inverse(self.Dm)
+        self.W0 = compute_signed_volume(self.Dm)
+
     def compute_pinned_deformation(self, v_def):
         '''
         Args:
@@ -77,7 +90,10 @@ class FEMSystem():
         Returns:
             v_def_pinned: deformed position of the vertices of the mesh after taking pinning into account (#v, 3)
         '''
-        pass
+        v_def_pinned = v_def.clone()
+        v_def_pinned[self.pin_idx] = self.v_rest[self.pin_idx]
+
+        return v_def_pinned
         
     def compute_jacobians(self, v_def):
         '''
@@ -87,7 +103,12 @@ class FEMSystem():
         Returns:
             jac: Jacobians of the deformation (#t, 3, 3)
         '''
-        pass
+        v_def_pinned = self.compute_pinned_deformation(v_def)
+
+        # compute deformed shape matrix
+        Ds = compute_shape_matrices(v_def_pinned, self.tet)
+
+        return torch.bmm(Ds, self.Bm)
     
     def compute_strain_tensor(self, jac):
         '''
@@ -110,7 +131,7 @@ class FEMSystem():
         Returns:
             energy_el: elastic energy of the system [J]
         '''
-        pass
+        
     
     def compute_external_energy(self, def_barycenters, f_vol):
         '''
@@ -159,7 +180,8 @@ def compute_barycenters(v, tet):
     Returns:
         barycenters: barycenters of the tetrahedra
     '''
-    pass
+    # Mean is along the same spatial axis in each tetrahedron
+    return torch.mean(v[tet], axis=1)
 
 def compute_shape_matrices(v, tet):
     '''
@@ -170,7 +192,10 @@ def compute_shape_matrices(v, tet):
     Returns:
         D: shape matrices of current configuration (#t, 3, 3)
     '''
-    pass
+    tet_v = v[tet]
+    # -1: is needed for dimensions to match
+    D = tet_v[:, :-1, :] - tet_v[:, -1:, :]
+    return D.mT
 
 def compute_signed_volume(D):
     '''
@@ -180,4 +205,5 @@ def compute_signed_volume(D):
     Returns:
         signed_volume: signed volumes of the tetrahedra (#t,)
     '''
-    pass
+    # torch.det does batch determinant
+    return -torch.det(D) / 6.0

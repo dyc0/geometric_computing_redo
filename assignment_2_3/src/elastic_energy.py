@@ -61,13 +61,26 @@ class LinearElasticEnergy(ElasticEnergy):
         super().__init__(young, poisson)
     
     def compute_strain_tensor(self, jac):
-        pass
+        # 1/2 * (F^T * F) - I
+        return 0.5 * (jac.transpose(-1, -2) + jac) - torch.eye(jac.shape[-1])
 
     def compute_energy_density(self, jac, E):
-        pass
+        # mu * E:E
+        first = self.mu * torch.einsum('...ij,...ij', E, E)
+        # 1/2 * lambda * (tr(E))^2
+        second = 0.5 * self.lbda * torch.einsum('...ii->...', E)**2
+        
+        return first + second
     
     def compute_piola_kirchhoff_stress_tensor(self, jac, E):
-        pass
+        # 2 * mu * E
+        first = 2 * self.mu * E
+        # lambda * tr(E) 
+        second = self.lbda * torch.einsum('...ii', E) 
+        # lambda * tr(E) * I
+        second = torch.einsum('..., ...ij -> ...ij', second, torch.eye(E.size(-1)))
+        
+        return first + second
 
 class NeoHookeanElasticEnergy(ElasticEnergy):
     def __init__(self, young, poisson):
@@ -75,15 +88,41 @@ class NeoHookeanElasticEnergy(ElasticEnergy):
         self.muNH = self.mu
         self.lbdaNH = self.lbda + self.muNH
         self.nuNH = (self.lbdaNH - self.muNH) / (2.0 * self.lbdaNH)
-        self.alpha = 0.0 # TODO: compute alpha so that the model is rest-stable
-        self.psi0 = 0.0 # TODO: compute psi0 so that the model has 0 energy at rest
+        self.alpha = 1.0 + self.muNH / self.lbdaNH
+        self.psi0 = 0.5 * self.lbdaNH * (self.alpha - 1)**2
 
     def compute_strain_tensor(self, jac):
         # Nothing to do here. Think why?
+        # Neo-hookean model uses F directly, no strain needs to be calculated
         pass
 
     def compute_energy_density(self, jac, E):
-        pass
+        # I1 = tr(F^T * F)
+        I1 = torch.einsum(
+            '...ii',
+            torch.bmm(jac, jac.transpose(-1, -2))
+        )
+        J = torch.det(jac)
+        
+        # psi1 = muNH/2 * (I1 - 3) 
+        first = 0.5 * self.muNH * (I1 - 3)
+        # psi2 = lbdaNH/2 * (J - alpha)^2
+        second = 0.5 * self.lbdaNH * (J - self.alpha)**2
+
+        return first + second - self.psi0
 
     def compute_piola_kirchhoff_stress_tensor(self, jac, E):
-        pass
+        # PK = muNH * F + lbdaNH * J * (J - alpha) * F^{-T}
+
+        ## muNh * F
+        first = self.muNH * jac
+
+        ## lbdaNH * J * (J - alpha) * F^{-T}
+        J = torch.det(jac)
+        inv_jac = torch.inverse(jac)
+        #       lbdaNH * J * (J - alpha) 
+        second = self.lbdaNH * J * (J - self.alpha) 
+        #       lbdaNH * J * (J - alpha) * F^{-T}
+        second = torch.einsum("..., ...ij -> ...ij", second, inv_jac.transpose(-1, -2))
+
+        return first + second
