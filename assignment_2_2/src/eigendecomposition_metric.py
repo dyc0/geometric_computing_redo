@@ -18,8 +18,13 @@ def compute_eigendecomposition_metric(jac):
         square_root_eigvals: torch tensor of shape (#t, 3) containing the square root of the eigenvalues of the metric tensor in ascending order
         eigvecs: torch tensor of shape (#t, 3, 3) containing the eigenvectors of the metric tensor
     '''
+    metric = torch.bmm(jac.transpose(-1, -2), jac)
+    eigvals, eigvecs = torch.linalg.eigh(metric)
 
-    eigvals, eigvecs = torch.zeros(size=jac.shape[:2]), torch.zeros_like(jac)
+    # Ensure numerically stable non-negative eigvals
+    # Non-negativeness is guaranteed by the metric tensor being positive semi-definite
+    eigvals = torch.clamp(eigvals, min=0.0)
+    eigvals = torch.sqrt(eigvals)
 
     return eigvals, eigvecs
 
