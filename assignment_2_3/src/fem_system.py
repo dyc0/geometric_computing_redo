@@ -118,7 +118,7 @@ class FEMSystem():
         Returns:
             E: strain induced by the deformation (#t, 3, 3)
         '''
-        pass
+        return self.ee.compute_strain_tensor(jac)
     
     ## Energies ##
     
@@ -131,6 +131,10 @@ class FEMSystem():
         Returns:
             energy_el: elastic energy of the system [J]
         '''
+        # To get energy per tet, multiply energy density with the volume
+        # Total energy is the sum of per-tet energies
+        energy_density = self.ee.compute_energy_density(jac, E)
+        return torch.sum(self.W0 * energy_density)
         
     
     def compute_external_energy(self, def_barycenters, f_vol):
@@ -157,7 +161,35 @@ class FEMSystem():
         Returns:
             forces_el: the elastic forces of the system (#v, 3)
         '''
-        pass
+        PK1 = self.ee.compute_piola_kirchhoff_stress_tensor(jac, E)
+
+        # H = W0 * PK1 * Dm^-T
+        H = torch.einsum("..., ...ij->...ij", -self.W0, PK1)
+        H = torch.bmm(H, self.Bm.transpose(-1, -2))
+        # Add per-tet force to the fourth vertex of each tetrahedron as a new column
+        H = torch.cat((H, -H.sum(dim=2, keepdim=True)), dim=2)
+        # per_tet_H is of shape (#t, 3, 4), i.e. a batch of force matrices, where
+        # each column corresponds to a vertex of the tetrahedron
+
+        # This part needs further clarification. The function vertex_elt_sum
+        # needs as input data a 1D array of data per-vertex, per-element, i.e.
+        # [v1t1, v1t2, v1t3, ..., v2t1, v2t2, ...]. So vertex index changes more
+        # slowly than tetrahedron index (column-major flattening). 
+        # On the other hand, flattening in torch is row-major, which means the 
+        # last index (vertex index) in our H tensor will be the fastest one to change.
+        #  Since we want the tet index to be the fastest changing one, we permute 
+        # the matrix so that it is in the last position. Then we can extract axes as 
+        # the first coordinate, and vertices as the second.
+        H = H.permute(1, 2, 0)
+
+        # Sum the forces of the tets that share a vertex, and get per-vertex force
+        # components.
+        f_x = self.vertex_tet_sum.vertex_elt_sum(H[0, :, :].flatten())
+        f_y = self.vertex_tet_sum.vertex_elt_sum(H[1, :, :].flatten())
+        f_z = self.vertex_tet_sum.vertex_elt_sum(H[2, :, :].flatten())
+
+        # Stack the components as columns to get a final force matrix
+        return torch.stack([f_x, f_y, f_z], dim=1)
     
     def compute_volumetric_and_external_forces(self):
         '''
@@ -168,7 +200,36 @@ class FEMSystem():
             f_vol: torch tensor of shape (#t, 3) external force per unit volume acting on the tets
             f_ext: torch tensor of shape (#v, 3) external force acting on the vertices
         '''
-        pass
+        # Force per unit volume is density times gravity. Here we rasume that rho is constant.
+        f_vol = self.f_mass * self.rho
+        # Repeat the force per unit volume for each tetrahedron
+        f_vol = f_vol.unsqueeze(0).repeat(self.tet.shape[0], 1)
+
+        # Calculate force per tetrahedron by multiplying force per unit volume 
+        # with the volume of the tetrahedron
+        f_per_vertex = self.W0.unsqueeze(-1) * f_vol
+        # Forces per vertex are distributed evenly to the vertices of the tetrahedron
+        # The repeat function, as written, repeats the tensor 4 times along the first axis,
+        # effectively producing a tensor of the shape (#vert_per_tet, #t, 3). So the first
+        # submatrix is the set of forces acting on the first vertex of each tetrahedron, etc.
+        # This is good for the vertex_elt_sum function, as explained below.
+        f_per_vertex = 0.25 * f_per_vertex.repeat(4, 1, 1)
+        
+        # vertex_elt_sum expects that the fastest changing coordinate is the tetrahedron index,
+        # effectively listing the forces acting on the first vertex of each tetrahedron, then the
+        # second vertex, etc. The last axis represents the components of the force in space.
+        # When we extract a component, we get a tensor of column matrices, where each matrix
+        # consists of forces acting on n-th vertex of each tetrahedron. When we flatten this,
+        # we get a 1D array in the shape of
+        # [v1t1, v1t2, v1t3, ..., v2t1, v2t2, ...], 
+        # which is what vertex_elt_sum expects.
+        f_x = self.vertex_tet_sum.vertex_elt_sum(f_per_vertex[:, :, 0].flatten())
+        f_y = self.vertex_tet_sum.vertex_elt_sum(f_per_vertex[:, :, 1].flatten())
+        f_z = self.vertex_tet_sum.vertex_elt_sum(f_per_vertex[:, :, 2].flatten())
+
+        f_ext = torch.stack([f_x, f_y, f_z], dim=1)
+
+        return f_vol, f_ext
     
 
 def compute_barycenters(v, tet):
