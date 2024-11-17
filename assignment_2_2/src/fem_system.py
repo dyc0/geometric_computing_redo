@@ -28,7 +28,8 @@ class FEMSystem():
         self.rho = rho
         if pin_idx is None:
             pin_idx = []
-        self.pin_idx = torch.tensor(pin_idx)
+        # They are evil and this is pathological
+        self.pin_idx = torch.tensor(pin_idx, dtype=torch.long)
         self.free_idx = None
         self.free_mask = None
         self.make_free_indices_and_free_mask()
@@ -46,9 +47,6 @@ class FEMSystem():
             free_idx: torch tensor of shape (#free_vertices,) containing the list of unpinned vertices
             free_mask: torch tensor of shape (#v, 1) containing 1 at free vertex indices and 0 at pinned vertex indices
         '''
-        # They are evil and this is pathological
-        self.pin_idx = self.pin_idx.long()
-
         self.free_mask = torch.ones(self.v_rest.shape[0])
         if not self.pin_idx.numel() == 0:
             self.free_mask[self.pin_idx] = 0
